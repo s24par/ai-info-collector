@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments and tooling
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local application artifacts
+logs/
+output/
+models/gguf/*
+!models/gguf/put_gguf_here
+
+# Editor and chat artifacts
+.vscode/*.log
+.chat-history/
+.copilot-work/

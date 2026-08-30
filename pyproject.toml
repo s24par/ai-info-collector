@@ -1,0 +1,64 @@
+[project]
+name = "ai-info-collector"
+version = "0.1.0"
+description = "Collect and classify AI-related information with a local LLM."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "s24par" }]
+license = "MIT"
+keywords = ["ai", "llama-cpp", "llm", "rss"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "httpx>=0.27,<1",
+    "pydantic>=2.7,<3",
+    "feedparser>=6.0,<7",
+    "typer>=0.12,<1",
+    "llama-cpp-python>=0.3.0,<1",
+    "tomlkit>=0.13,<1",
+    "httpx-retries>=0.4,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=5,<7",
+]
+
+[project.scripts]
+ai-info-collector = "ai_info_collector.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/s24par/ai-info-collector"
+Repository = "https://github.com/s24par/ai-info-collector"
+Issues = "https://github.com/s24par/ai-info-collector/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_info_collector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=ai_info_collector --cov-report=term-missing --cov-fail-under=90"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+extend-exclude = [".chat-history"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.5",
+]

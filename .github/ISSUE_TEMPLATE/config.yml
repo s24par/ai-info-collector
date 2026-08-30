@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: セキュリティ上の問題を報告する
+    url: https://github.com/s24par/ai-info-collector/security/advisories/new
+    about: 脆弱性は公開Issueではなく、非公開のセキュリティアドバイザリで報告してください。

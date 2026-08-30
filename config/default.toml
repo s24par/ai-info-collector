@@ -1,0 +1,77 @@
+[collection]
+freshness_days = 7
+timeout_seconds = 20
+retry_count = 2
+
+[[collection.sources]]
+name = "openai"
+url = "https://openai.com/news/"
+feed_url = "https://openai.com/news/rss.xml"
+max_items = 10
+
+[[collection.sources]]
+name = "deepmind"
+url = "https://deepmind.google/blog/"
+feed_url = "https://deepmind.google/blog/rss.xml"
+max_items = 10
+
+[[collection.sources]]
+name = "huggingface"
+url = "https://huggingface.co/blog"
+feed_url = "https://huggingface.co/blog/feed.xml"
+max_items = 10
+
+[[collection.sources]]
+name = "github_copilot"
+url = "https://github.blog/tag/github-copilot/"
+feed_url = "https://github.blog/tag/github-copilot/feed/"
+max_items = 10
+
+[[collection.sources]]
+name = "itmedia_ai_plus"
+url = "https://www.itmedia.co.jp/aiplus/"
+feed_url = "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml"
+max_items = 10
+
+[[collection.sources]]
+name = "stackoverflow_ai"
+url = "https://stackoverflow.com/questions/tagged/artificial-intelligence"
+feed_url = "https://stackoverflow.com/feeds/tag?tagnames=artificial-intelligence&sort=newest"
+max_items = 10
+
+[analysis]
+provider = "llama_cpp"
+summary_max_characters = 200
+model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+n_ctx = 40960
+n_threads = 4
+max_tokens = 512
+temperature = 0.0
+
+[output]
+path = "output"
+
+[filter]
+literacy_levels = [1, 2, 3]
+categories = [
+    "AIモデル",
+    "AI製品アップデート",
+    "AIエージェント",
+    "AI活用事例",
+    "AIガバナンス",
+    "AIセキュリティ",
+    "AI規制",
+    "オープンソースAI",
+    "マルチモーダルAI",
+]
+
+[filter.literacy_level_definitions]
+1 = "基礎利用者: AI利用ルールや情報漏洩リスクを理解し、日常業務でAIを利用できる"
+2 = "実践利用者: 業務課題に応じたプロンプト設計やAI活用による業務改善ができ、周囲に説明できる"
+3 = "推進リーダー: 部門内の活用リード、ツール選定・ルール整備への参画、運用提案ができる"
+
+[logging]
+level = "INFO"
+file = "logs/app.log"
+console = true
+retention_days = 3
