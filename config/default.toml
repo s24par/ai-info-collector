@@ -45,6 +45,9 @@ summary_max_characters = 200
 model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 n_ctx = 40960
 n_threads = 4
+n_gpu_layers = 0
+n_batch = 512
+main_gpu = 0
 max_tokens = 512
 temperature = 0.0
 

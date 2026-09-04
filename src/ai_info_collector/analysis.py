@@ -26,6 +26,9 @@ class LlamaCppBackend:
                 model_path=self.config.model_path,
                 n_ctx=self.config.n_ctx,
                 n_threads=self.config.n_threads,
+                n_gpu_layers=self.config.n_gpu_layers,
+                n_batch=self.config.n_batch,
+                main_gpu=self.config.main_gpu,
             )
 
         # create_chat_completion applies the model's chat template (from GGUF metadata) and

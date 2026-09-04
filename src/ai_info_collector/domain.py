@@ -25,6 +25,9 @@ class AnalysisConfig(BaseModel):
     model_path: str = Field(min_length=1)
     n_ctx: int = Field(default=4096, gt=0)
     n_threads: int = Field(default=4, gt=0)
+    n_gpu_layers: int = Field(default=0, ge=-1)
+    n_batch: int = Field(default=512, gt=0)
+    main_gpu: int = Field(default=0, ge=0)
     max_tokens: int = Field(default=256, gt=0)
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
 
