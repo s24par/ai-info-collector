@@ -11,6 +11,9 @@ def test_default_config_is_valid() -> None:
     assert config.collection.freshness_days == 7
     assert config.analysis.summary_max_characters == 200
     assert config.analysis.max_tokens == 512
+    assert config.analysis.n_gpu_layers == 0
+    assert config.analysis.n_batch == 512
+    assert config.analysis.main_gpu == 0
     assert [source.name for source in config.collection.sources] == [
         "openai",
         "deepmind",
@@ -56,7 +59,8 @@ def test_invalid_source_max_items_is_rejected(tmp_path: Path) -> None:
         "url = 'https://example.com'\nfeed_url = 'https://example.com/feed'\nmax_items = 0\n"
         "[analysis]\nmodel_path = '/tmp/test-model.gguf'\n"
         "[output]\npath = 'report.md'\n[filter]\n"
-        "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n"
+        "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n",
+        encoding="utf-8",
     )
 
     try:
@@ -65,3 +69,23 @@ def test_invalid_source_max_items_is_rejected(tmp_path: Path) -> None:
         assert "Invalid configuration" in str(error)
     else:
         raise AssertionError("Invalid configuration was accepted")
+
+
+def test_invalid_gpu_configuration_is_rejected(tmp_path: Path) -> None:
+    config_path = tmp_path / "invalid-gpu.toml"
+    config_path.write_text(
+        "[collection]\nfreshness_days = 7\n"
+        "[[collection.sources]]\nname = 'source'\n"
+        "url = 'https://example.com'\n"
+        "[analysis]\nmodel_path = '/tmp/test-model.gguf'\nn_gpu_layers = -2\n"
+        "[output]\npath = 'report.md'\n[filter]\n"
+        "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n",
+        encoding="utf-8",
+    )
+
+    try:
+        load_config(config_path)
+    except ValueError as error:
+        assert "Invalid configuration" in str(error)
+    else:
+        raise AssertionError("Invalid GPU configuration was accepted")

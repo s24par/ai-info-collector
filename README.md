@@ -18,6 +18,9 @@ The current implementation policy is as follows:
 uv sync --extra dev
 ```
 
+For instructions on using the prebuilt CPU-only `llama-cpp-python` wheel on
+Windows, see [WINDOWS_SETUP.md](WINDOWS_SETUP.md).
+
 Prepare a local GGUF model and set its file path in `analysis.model_path` in the configuration file.
 
 The recommended directory structure is as follows.
@@ -42,11 +45,21 @@ provider = "llama_cpp"
 model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 n_ctx = 40960
 n_threads = 4
+n_gpu_layers = 0
+n_batch = 512
+main_gpu = 0
 max_tokens = 256
 temperature = 0.0
 ```
 
 `llama-cpp-python` loads this GGUF file directly. Relative paths are resolved relative to the project root, so the same model can be referenced even if the execution directory changes.
+
+To enable GPU acceleration, install a hardware-accelerated build of
+`llama-cpp-python` and set `n_gpu_layers` to `-1` to offload all model layers.
+Use a positive value to offload only that many layers when the model does not fit
+in VRAM. The default value, `0`, keeps inference on the CPU. `main_gpu` selects the
+GPU used by llama.cpp, and `n_batch` controls the prompt-processing batch size.
+See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for a Windows CUDA installation example.
 
 ## Run
 
@@ -108,6 +121,9 @@ summary_max_characters = 200
 model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 n_ctx = 40960
 n_threads = 4
+n_gpu_layers = 0
+n_batch = 512
+main_gpu = 0
 max_tokens = 256
 temperature = 0.0
 ```
@@ -115,4 +131,6 @@ temperature = 0.0
 ## Notes
 
 - Set `model_path` to the path of a GGUF file that actually exists.
+- GPU offloading requires a hardware-accelerated `llama-cpp-python` build; the
+  default CPU wheel cannot use CUDA even when `n_gpu_layers` is enabled.
 - With `llama-cpp-python`, the CPU/GPU capability of the local environment affects execution performance.

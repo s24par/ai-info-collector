@@ -1,11 +1,14 @@
 import json
 import logging
+import sys
 from datetime import datetime, timezone
+from types import ModuleType
 
 import pytest
 
 from ai_info_collector.analysis import (
     LlamaCppAnalyzer,
+    LlamaCppBackend,
     _build_prompt,
     _extract_json_object,
 )
@@ -18,6 +21,37 @@ class FakeLlamaCppBackend:
 
     def generate(self, prompt: str) -> str:
         return self.text
+
+
+def test_llama_cpp_backend_passes_gpu_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_kwargs = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs) -> None:
+            init_kwargs.update(kwargs)
+
+        def create_chat_completion(self, **kwargs):
+            return {"choices": [{"message": {"content": '{"result": "ok"}'}}]}
+
+    fake_module = ModuleType("llama_cpp")
+    fake_module.Llama = FakeLlama
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_module)
+    backend = LlamaCppBackend(
+        AnalysisConfig(
+            model_path="/tmp/model.gguf",
+            n_gpu_layers=-1,
+            n_batch=256,
+            main_gpu=1,
+        )
+    )
+
+    backend.generate("test")
+
+    assert init_kwargs["n_gpu_layers"] == -1
+    assert init_kwargs["n_batch"] == 256
+    assert init_kwargs["main_gpu"] == 1
 
 
 def test_llama_cpp_response_is_validated() -> None:
