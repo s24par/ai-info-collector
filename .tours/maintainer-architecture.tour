@@ -19,70 +19,120 @@
     {
       "file": "src/ai_info_collector/domain.py",
       "line": 6,
-      "selection": [6, 32],
+      "selection": {
+        "start": { "line": 6, "character": 1 },
+        "end": { "line": 32, "character": 1 }
+      },
       "title": "Domain Models: Configuration",
       "description": "**Situation:** This section defines the four root configuration objects: `SourceConfig` (one RSS feed), `CollectionConfig` (feed list + retry policy), `AnalysisConfig` (LLM settings), `OutputConfig` (where to write reports).\n\n**Mechanism:** All use Pydantic v2 `BaseModel` with field constraints (min_length, ge, le). The `AnalysisConfig.model_post_init()` hook (not shown here) resolves relative model paths to absolute paths using the repo root as the anchor.\n\n**Implication:** Configuration is **immutable after load**—the CLI loads it once, passes it through the pipeline, and each subsystem gets its slice (collection uses `CollectionConfig`, analyzer uses `AnalysisConfig`). This makes testing deterministic.\n\n**Gotcha:** `HttpUrl` fields require fully qualified URLs (https://...). If a test or config uses a bare URL, Pydantic will raise a validation error. The error message is clear, but it breaks early in `settings.py:load_config()`."
     },
     {
+      "file": "src/ai_info_collector/settings.py",
+      "line": 6,
+      "selection": {
+        "start": { "line": 6, "character": 1 },
+        "end": { "line": 13, "character": 1 }
+      },
+      "title": "Configuration Loading Boundary",
+      "description": "**Situation:** `load_config()` is the narrow boundary between a TOML file on disk and a validated `AppConfig` object.\n\n**Mechanism:** It parses bytes with the standard-library `tomllib`, then delegates all shape and value validation to Pydantic's `AppConfig.model_validate()`. Pydantic errors are converted into a stable `ValueError` for the CLI layer.\n\n**Implication:** This is the first place to debug malformed configuration, missing sections, invalid URLs, and out-of-range model settings. Keeping parsing and validation here prevents collection and analysis code from handling raw dictionaries.\n\n**Gotcha:** TOML parsing errors occur before the `try` block, while Pydantic validation errors are wrapped. Callers therefore receive different exception types for syntactically invalid TOML versus structurally invalid configuration. Preserve that distinction when changing error handling."
+    },
+    {
       "file": "src/ai_info_collector/domain.py",
       "line": 40,
-      "selection": [40, 50],
+      "selection": {
+        "start": { "line": 40, "character": 1 },
+        "end": { "line": 50, "character": 1 }
+      },
       "title": "Domain Models: Literacy Levels",
       "description": "**Situation:** `DEFAULT_LITERACY_LEVEL_DEFINITIONS` maps 3 literacy levels to Japanese descriptions for AI learners—basic users, practitioners, and leaders.\n\n**Mechanism:** These strings are embedded in the prompt sent to the LLM. The analyzer classifies each article into one of these 3 levels, and reports are bucketed accordingly.\n\n**Implication:** If you change literacy level semantics (add a level 4, rename level 2), you must:\n1. Update this dict\n2. Update the prompt in `analysis.py:_build_prompt()`\n3. Update tests in `test_analysis.py` to expect the new level\n4. Coordinate with `report.py` to ensure output files match (e.g., `level_4.md`)\n\n**Gotcha:** The LLM is told to return JSON with a `literacy_level` field. If the prompt and this dict go out of sync, the LLM might return level 4 while the report generator expects levels 1–3 only—leading to silent errors in report filtering."
     },
     {
       "file": "src/ai_info_collector/cli.py",
       "line": 17,
-      "selection": [17, 50],
+      "selection": {
+        "start": { "line": 17, "character": 1 },
+        "end": { "line": 50, "character": 1 }
+      },
       "title": "CLI: Entry Point and Logging Setup",
       "description": "**Situation:** The CLI entry point uses `typer` to expose two commands: `run` (main pipeline) and `sources` (feed discovery).\n\n**Mechanism:** `_create_analyzer()` instantiates the LLM backend. `_configure_logging()` sets up a `TimedRotatingFileHandler` that rotates logs at midnight, retaining the last `retention_days` files (default 3). The root logger is cleared and reconfigured each time to ensure clean state.\n\n**Implication:** Logging configuration is **stateful**—if you run the CLI twice in the same Python process (unlikely but possible in tests), the second run clears handlers from the first. This is intentional but worth noting.\n\n**Gotcha:** `TimedRotatingFileHandler` with `backupCount=retention_days - 1` means if retention is 3 days, only 2 backup files are kept (today + 2 prior days = 3 total). The math is off-by-one. If you want to keep exactly 3 days, set `backupCount=retention_days - 1` (which it does), but understand this is a Python logging quirk, not a bug."
     },
     {
       "file": "src/ai_info_collector/collection.py",
       "line": 20,
-      "selection": [20, 45],
+      "selection": {
+        "start": { "line": 20, "character": 1 },
+        "end": { "line": 45, "character": 1 }
+      },
       "title": "Article Collection: Deduplication & Freshness",
       "description": "**Situation:** `filter_fresh_articles()` and `deduplicate_articles()` are helper functions that clean the raw feed parse output before analysis.\n\n**Mechanism:** Fresh articles pass a date cutoff (now ± freshness_days). Deduplication tracks both URLs (normalized) and titles (lowercased + whitespace normalized) to catch mirrors and reposts. Duplicates are dropped silently.\n\n**Implication:** If an article URL is normalized differently than expected, it might slip through as a duplicate or fail to deduplicate. The `url_utils.normalize_url()` function is critical—check it if dedup behavior surprises you.\n\n**Gotcha:** The deduplication loop visits articles in feed order and stops on first match. If two feeds both carry the same article, only the first occurrence is kept. This is deterministic but depends on feed order in config. If you need last-writer-wins or smarter merge, this function is a hot spot."
     },
     {
       "file": "src/ai_info_collector/collection.py",
       "line": 45,
-      "selection": [45, 70],
+      "selection": {
+        "start": { "line": 45, "character": 1 },
+        "end": { "line": 70, "character": 1 }
+      },
       "title": "RSS Collection: Main Loop",
       "description": "**Situation:** `RssCollector.collect()` is the main collection subsystem. It iterates over configured sources, fetches their feeds (with retry logic), parses them, and returns collected articles and errors.\n\n**Mechanism:** The HTTP client is injected in the constructor (dependency injection pattern), making unit tests easy. Each source fetch may fail—errors are accumulated and returned, but collection continues. Articles from failed sources are skipped, not faked.\n\n**Implication:** Error handling is **graceful degradation**—if one feed times out or 404s, the pipeline continues with the other feeds. The CLI logs errors but exits 0. If you're monitoring feed health, check the returned `errors` list, not just exit codes.\n\n**Gotcha:** `feedparser` is permissive—it will parse malformed RSS/Atom feeds and return partial data without raising exceptions. A feed might claim 10 articles but parse only 3. If you need strict validation, add it here."
     },
     {
+      "file": "src/ai_info_collector/http_client.py",
+      "line": 6,
+      "selection": {
+        "start": { "line": 6, "character": 1 },
+        "end": { "line": 18, "character": 1 }
+      },
+      "title": "HTTP Reliability Policy",
+      "description": "**Situation:** `create_collection_client()` centralizes the transport policy used by RSS collection.\n\n**Mechanism:** `httpx_retries.Retry` retries only GET and HEAD requests, and only for transient statuses such as 429 and 5xx responses. Exponential backoff and `Retry-After` support are enabled, while the client also applies the configured timeout and follows redirects.\n\n**Implication:** Network behavior is a shared policy, so changing it affects both normal collection and feed discovery. The injected transport remains available for deterministic HTTP tests.\n\n**Gotcha:** POST requests and non-transient 4xx responses are intentionally not retried. Broadening `allowed_methods` or `status_forcelist` can duplicate side effects or hide permanent configuration failures."
+    },
+    {
       "file": "src/ai_info_collector/pipeline.py",
       "line": 16,
-      "selection": [16, 40],
+      "selection": {
+        "start": { "line": 16, "character": 1 },
+        "end": { "line": 40, "character": 1 }
+      },
       "title": "Pipeline Orchestration",
       "description": "**Situation:** `CollectionPipeline.run()` is the heart of the application—it sequences collection, deduplication, filtering, per-article analysis, and reporting.\n\n**Mechanism:** The pipeline uses dependency injection: `collector` and `analyzer` are Protocol interfaces, allowing you to swap in fakes for testing. The loop enforces `max_items` per source—once a source hits its quota, further articles are dropped. Analysis results and collected items are paired and returned.\n\n**Implication:** The pipeline is stateless—it doesn't cache results or maintain side effects. Each run is independent. If you add caching (to avoid re-analyzing the same article), do it in the subsystem (e.g., `LlamaCppAnalyzer`), not in the pipeline.\n\n**Gotcha:** The `source_limits` dict is built once, before the loop. If `config.collection.sources` changes during iteration (which it shouldn't), the behavior is undefined. Sources are identified by name—if two sources share a name, the limit calculation breaks. The code assumes source names are unique (not validated), so this is a quiet landmine."
     },
     {
       "file": "src/ai_info_collector/analysis.py",
       "line": 42,
-      "selection": [42, 62],
+      "selection": {
+        "start": { "line": 42, "character": 1 },
+        "end": { "line": 62, "character": 1 }
+      },
       "title": "LLM Analysis: Prompt & JSON Parsing",
       "description": "**Situation:** `LlamaCppAnalyzer.analyze()` sends a prompt to the local LLM and parses the JSON response to extract summary, category, literacy level, and reasoning.\n\n**Mechanism:** The backend uses `llama_cpp.Llama.create_chat_completion()` with `response_format={\"type\": \"json_object\"}` to grammar-constrain the model to emit valid JSON. The response is unwrapped from the OpenAI-like completion format and returned as a string.\n\n**Implication:** The prompt construction (in `_build_prompt()`, not shown) is crucial—it must unambiguously tell the LLM what JSON shape to return. If the prompt is vague, the LLM might return valid JSON but with unexpected field names or values, breaking the downstream parser.\n\n**Gotcha:** `llama_cpp` is a thin wrapper around llama.cpp's C++ code. Model loading is lazy—the first call to `analyze()` will load the GGUF file and initialize the model. This is slow. If you want to warm up the model, call `analyze()` with a dummy article early in `main()`, or refactor to eager-load in `__init__()`. Also, if `n_threads` doesn't match your CPU count, inference can be surprisingly slow."
     },
     {
       "file": "src/ai_info_collector/report.py",
       "line": 5,
-      "selection": [5, 30],
+      "selection": {
+        "start": { "line": 5, "character": 1 },
+        "end": { "line": 30, "character": 1 }
+      },
       "title": "Report Generation: Markdown Rendering",
       "description": "**Situation:** `render_markdown()` and `write_markdown()` generate human-readable markdown for each article-result pair. The full `write_level_reports()` function (not shown) buckets results by literacy level and writes separate `.md` files.\n\n**Mechanism:** For each (article, analysis result) tuple, the code emits a structured markdown block with metadata (source, date, category, level) and the LLM's summary. All articles flow into a single list and are joined with newlines.\n\n**Implication:** The markdown format is fixed—if you want to change the template (e.g., add reasoning, reorder fields, use different headings), edit this function. The format is Japanese-focused (headings in Japanese, structure borrowed from technical reports).\n\n**Gotcha:** `render_markdown()` doesn't escape markdown special characters in titles or summaries. If an article title contains `#` or `[]`, the markdown output will be malformed. If this becomes an issue, pass summaries through a markdown escaper."
     },
     {
       "file": "tests/test_pipeline.py",
       "line": 1,
-      "selection": [1, 45],
+      "selection": {
+        "start": { "line": 1, "character": 1 },
+        "end": { "line": 45, "character": 1 }
+      },
       "title": "Testing: Fake Implementations & Protocol Verification",
       "description": "**Situation:** The test file demonstrates how to stub the `ArticleCollector` and `ArticleAnalyzer` Protocols using `FakeCollector`, `FakeAnalyzer`, and more specialized fakes (`MultiArticleCollector`, `FilteringAnalyzer`).\n\n**Mechanism:** Each fake returns hardcoded `CollectionResult` or `AnalysisResult` objects, allowing tests to verify the pipeline's logic (filtering, deduplication, source limits) without touching the LLM or network. Tests import directly from submodules, not from `__init__.py`.\n\n**Implication:** When adding a new feature to the pipeline (e.g., a new filtering rule), add a test case here with a tailored fake. The protocol pattern makes this easy and forces you to think about the contract, not implementation details.\n\n**Gotcha:** Fakes return hardcoded `datetime.now(timezone.utc)`. If your test depends on exact timestamp comparisons or runs across a date boundary, it might fail intermittently. Use a dependency-injected `now` function or freeze the datetime in tests (e.g., with `freezegun`)."
     },
     {
       "file": "pyproject.toml",
       "line": 1,
-      "selection": [1, 30],
+      "selection": {
+        "start": { "line": 1, "character": 1 },
+        "end": { "line": 30, "character": 1 }
+      },
       "title": "Project Metadata & Dependency Management",
       "description": "**Situation:** `pyproject.toml` is the project manifest—it declares dependencies, test config, lint rules, and build system.\n\n**Mechanism:** Dependencies use version ranges (e.g., `httpx>=0.27,<1`) to allow patch updates but lock major versions. Optional `[dev]` dependencies include pytest and coverage. The project targets Python 3.11+. Ruff is configured for linting with specific rules (E, F, I = errors, undefined names, imports).\n\n**Implication:** If you add a new subsystem (e.g., database support, new report format), add its dependency here with version constraints. If CI fails on a lint error, check Ruff's rules and `.ruff.toml` (not shown, but check if it exists).\n\n**Gotcha:** `uv` is the package manager (mentioned in README as the preferred way to sync). `pip install -e .` will work but bypasses `uv.lock`, risking dependency version drift. Always use `uv sync` for local development and `uv pip compile` for CI builds to ensure reproducibility."
     },

@@ -1,0 +1,149 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "メンテナー向けアーキテクチャ概要",
+  "description": "ai-info-collectorを保守する開発者向けに、設定、RSS収集、ローカルLLM分析、Markdownレポート生成までの中核アーキテクチャをたどります。",
+  "ref": "main",
+  "isPrimary": false,
+  "steps": [
+    {
+      "file": "README.md",
+      "line": 1,
+      "title": "プロジェクト概要",
+      "description": "**状況:** ai-info-collectorは、AI関連ニュースを収集・要約・分類するPython製CLIツールです。\n\n**仕組み:** TOMLで設定したRSS/Atomフィードから記事を取得し、鮮度と重複を確認した後、ローカルのGGUFモデルで要約とリテラシーレベル分類を行い、レベル別のMarkdownレポートを生成します。\n\n**保守への意味:** ステージ間のデータ契約を把握することが重要です。記事は`Article`、分析結果は`AnalysisResult`、設定はPydanticモデルで表現されます。あるステージの変更は、後続ステージの入力に直結します。\n\n**注意点:** 実装方針はローカル実行のみで、クラウドLLMには対応していません。相対モデルパスは`domain.py`の`model_post_init()`でプロジェクトルート基準に解決されるため、実行場所を変えたときのモデル読み込み問題に注意してください。"
+    },
+    {
+      "directory": "src/ai_info_collector",
+      "title": "モジュール構成",
+      "description": "**状況:** `src/ai_info_collector/`には、責務を分けたPythonモジュールが配置されています。\n\n**仕組み:** `domain.py`がPydanticのドメインモデル、`pipeline.py`が処理のオーケストレーション、`collection.py`がRSS収集、`analysis.py`がLLM推論、`report.py`がMarkdown出力を担当します。設定読み込み、フィード検出、HTTPリトライ、URL正規化、CLI配線は周辺モジュールに分離されています。\n\n**保守への意味:** 新しい設定や機能を追加するときは、ドメインモデル、担当サブシステム、CLI、テストの順に影響範囲を確認できます。\n\n**注意点:** `pipeline.py`の`ArticleCollector`と`ArticleAnalyzer`はProtocolであり、実装そのものではありません。実装は`RssCollector`と`LlamaCppAnalyzer`です。この分離がネットワークやLLMなしのテストを可能にしています。"
+    },
+    {
+      "file": "src/ai_info_collector/domain.py",
+      "line": 6,
+      "selection": {
+        "start": { "line": 6, "character": 1 },
+        "end": { "line": 32, "character": 1 }
+      },
+      "title": "ドメインモデル: 設定",
+      "description": "**状況:** `SourceConfig`、`CollectionConfig`、`AnalysisConfig`、`OutputConfig`がアプリケーション設定の契約を定義します。\n\n**仕組み:** Pydantic v2の`BaseModel`と`min_length`、`ge`、`le`などの制約で入力を検証します。`AnalysisConfig.model_post_init()`は、相対モデルパスをリポジトリルート基準の絶対パスに変換します。\n\n**保守への意味:** CLIが設定を一度読み込み、各サブシステムへ必要な設定部分だけ渡すため、設定検証と実処理の境界が明確です。\n\n**注意点:** `HttpUrl`は完全なURLを要求します。裸のURLを設定やテストに渡すと、`settings.py:load_config()`の早い段階で検証エラーになります。"
+    },
+    {
+      "file": "src/ai_info_collector/settings.py",
+      "line": 6,
+      "selection": {
+        "start": { "line": 6, "character": 1 },
+        "end": { "line": 13, "character": 1 }
+      },
+      "title": "設定読み込みの境界",
+      "description": "**状況:** `load_config()`は、ディスク上のTOMLと検証済みの`AppConfig`オブジェクトの境界です。\n\n**仕組み:** 標準ライブラリの`tomllib`でバイト列を解析し、設定の形と値の検証をPydanticの`AppConfig.model_validate()`へ委譲します。Pydanticの検証エラーはCLI層向けに`ValueError`へ変換されます。\n\n**保守への意味:** 不正な設定、必須セクションの欠落、URL不正、モデル設定の範囲外値を調査するときの最初の確認地点です。ここで辞書を検証済みモデルへ変換することで、収集・分析コードが生の辞書を扱わずに済みます。\n\n**注意点:** TOML構文エラーは`try`の外で発生し、Pydantic検証エラーはラップされます。そのため、構文不正と設定値不正では呼び出し元が受け取る例外型が異なります。エラー処理を変更するときも、この区別を保ってください。"
+    },
+    {
+      "file": "src/ai_info_collector/domain.py",
+      "line": 40,
+      "selection": {
+        "start": { "line": 40, "character": 1 },
+        "end": { "line": 50, "character": 1 }
+      },
+      "title": "ドメインモデル: リテラシーレベル",
+      "description": "**状況:** `DEFAULT_LITERACY_LEVEL_DEFINITIONS`は、AIの基礎利用者、実践利用者、推進リーダーという3段階の定義を保持します。\n\n**仕組み:** 定義文はLLMプロンプトに埋め込まれ、分析結果の`literacy_level`とレポートの振り分けに使われます。\n\n**保守への意味:** レベルを追加・変更する場合は、この辞書、`analysis.py`のプロンプト、分析テスト、`report.py`の出力レベルを一緒に確認する必要があります。\n\n**注意点:** プロンプトが許すレベルとレポート側が処理するレベルがずれると、LLMが返した有効なJSONでも、該当レポートに載らない可能性があります。"
+    },
+    {
+      "file": "src/ai_info_collector/cli.py",
+      "line": 17,
+      "selection": {
+        "start": { "line": 17, "character": 1 },
+        "end": { "line": 50, "character": 1 }
+      },
+      "title": "CLI: エントリーポイントとログ設定",
+      "description": "**状況:** `cli.py`はTyperのコマンドを公開し、`run`で本処理、`sources`でフィード検出を起動します。\n\n**仕組み:** `_create_analyzer()`がLLM分析器を作り、`_configure_logging()`が日次ローテーション付きファイルログと任意のコンソールログを設定します。\n\n**保守への意味:** CLIはサブシステムを組み合わせる境界です。コマンドの変更時は、設定読み込み、ロガー、終了時のエラー処理まで確認してください。\n\n**注意点:** ルートロガーのハンドラーをクリアしてから再設定するため、同一プロセスでCLIを複数回呼ぶテストではログ状態がリセットされます。これは意図的な動作です。"
+    },
+    {
+      "file": "src/ai_info_collector/collection.py",
+      "line": 20,
+      "selection": {
+        "start": { "line": 20, "character": 1 },
+        "end": { "line": 45, "character": 1 }
+      },
+      "title": "記事収集: 鮮度確認と重複排除",
+      "description": "**状況:** `filter_fresh_articles()`と`deduplicate_articles()`は、分析前のデータ品質を整えます。\n\n**仕組み:** 鮮度確認は現在時刻からのカットオフで記事を絞り、重複排除は正規化済みURLと、大小文字・空白を正規化したタイトルの両方を追跡します。\n\n**保守への意味:** 同一記事が複数フィードから来る場合でも、分析対象を安定して抑制できます。重複挙動を調査するときは`url_utils.normalize_url()`も確認してください。\n\n**注意点:** 最初に現れた記事が採用され、重複は静かに破棄されます。採用結果は設定ファイル内のソース順に依存します。"
+    },
+    {
+      "file": "src/ai_info_collector/collection.py",
+      "line": 45,
+      "selection": {
+        "start": { "line": 45, "character": 1 },
+        "end": { "line": 70, "character": 1 }
+      },
+      "title": "RSS収集: メインループ",
+      "description": "**状況:** `RssCollector.collect()`は、設定された各ソースからフィードを取得して記事とエラーを返す収集サブシステムです。\n\n**仕組み:** HTTPクライアントをコンストラクターから注入し、フィード取得とfeedparserによる解析を行います。ソース単位の失敗はエラー一覧に蓄積し、他ソースの処理は継続します。\n\n**保守への意味:** 1つのフィード障害で全体を止めないグレースフルデグラデーションが、このアプリケーションの重要な動作契約です。監視では終了コードだけでなく、返却された`errors`も確認してください。\n\n**注意点:** feedparserは不完全なRSS/Atomでも例外を出さず、部分的な記事一覧を返すことがあります。厳密なフィード検証が必要なら、この境界に追加します。"
+    },
+    {
+      "file": "src/ai_info_collector/http_client.py",
+      "line": 6,
+      "selection": {
+        "start": { "line": 6, "character": 1 },
+        "end": { "line": 18, "character": 1 }
+      },
+      "title": "HTTPの信頼性ポリシー",
+      "description": "**状況:** `create_collection_client()`は、RSS収集で使う通信ポリシーを一元化します。\n\n**仕組み:** `httpx_retries.Retry`はGETとHEADだけを対象に、429や一部の5xxなど一時的なステータスを再試行します。指数バックオフ、`Retry-After`、設定済みタイムアウト、リダイレクト追従もここで設定されます。\n\n**保守への意味:** 通信設定は共有ポリシーなので、変更は通常収集とフィード検出の両方に影響します。注入可能なtransportは、決定的なHTTPテストにも使えます。\n\n**注意点:** POSTと一時的でない4xxは意図的に再試行しません。対象メソッドやステータスを安易に広げると、副作用の重複や恒久的な設定ミスの隠蔽につながります。"
+    },
+    {
+      "file": "src/ai_info_collector/pipeline.py",
+      "line": 16,
+      "selection": {
+        "start": { "line": 16, "character": 1 },
+        "end": { "line": 40, "character": 1 }
+      },
+      "title": "パイプラインのオーケストレーション",
+      "description": "**状況:** `CollectionPipeline.run()`は、収集結果を分析可能なレポート項目へ変換する中心処理です。\n\n**仕組み:** Protocolとして注入されたコレクターと分析器を使い、ソースごとの上限を適用しながら記事を処理し、記事と分析結果をペアにします。\n\n**保守への意味:** パイプライン自身は状態を保持せず、キャッシュや推論最適化を追加する場合も、まず担当サブシステムの責務として検討できます。\n\n**注意点:** ソース上限はソース名を辞書キーにして管理されます。同名ソースは想定されておらず、設定モデルでも一意性を検証していないため、静かな不具合の原因になります。"
+    },
+    {
+      "file": "src/ai_info_collector/analysis.py",
+      "line": 42,
+      "selection": {
+        "start": { "line": 42, "character": 1 },
+        "end": { "line": 62, "character": 1 }
+      },
+      "title": "LLM分析: プロンプトとJSON解析",
+      "description": "**状況:** `LlamaCppAnalyzer.analyze()`は記事をローカルLLMへ渡し、要約、カテゴリ、リテラシーレベル、判定理由を分析結果へ変換します。\n\n**仕組み:** `create_chat_completion()`にJSON応答形式を指定し、GGUFのチャットテンプレートを使って構造化された応答を生成します。バックエンドのモデル読み込みは遅延実行です。\n\n**保守への意味:** プロンプトが要求するJSON形状と、解析側が読むフィールド名・値が分析契約です。モデルを変更する場合は、この両方とテストを同時に確認します。\n\n**注意点:** 初回分析時にモデルを読み込むため、最初の1件だけ遅くなります。また、`n_threads`やコンテキスト長の変更は速度とメモリ使用量に影響します。"
+    },
+    {
+      "file": "src/ai_info_collector/report.py",
+      "line": 5,
+      "selection": {
+        "start": { "line": 5, "character": 1 },
+        "end": { "line": 30, "character": 1 }
+      },
+      "title": "レポート生成: Markdown描画",
+      "description": "**状況:** `render_markdown()`と`write_markdown()`は、記事と分析結果を人が読めるMarkdownへ変換します。\n\n**仕組み:** 情報源、公開日、カテゴリ、レベル、URL、要約、判定理由を一定の見出しと箇条書きで出力します。`write_level_reports()`がレベル別ファイルへの振り分けを担当します。\n\n**保守への意味:** 出力形式を変える場合の主な編集点はここです。表示項目の追加や順序変更をしたら、レポートテストと既存利用者への互換性を確認してください。\n\n**注意点:** タイトルや要約にMarkdown記号が含まれてもエスケープされません。入力によって見出しやリンクの構造が崩れる場合は、Markdownエスケープ処理を検討します。"
+    },
+    {
+      "file": "tests/test_pipeline.py",
+      "line": 1,
+      "selection": {
+        "start": { "line": 1, "character": 1 },
+        "end": { "line": 45, "character": 1 }
+      },
+      "title": "テスト: Fake実装とProtocolの検証",
+      "description": "**状況:** `test_pipeline.py`は、`FakeCollector`、`FakeAnalyzer`、用途別のFakeを使ってパイプラインをテストします。\n\n**仕組み:** ネットワークやLLMを呼ばずに、`CollectionResult`と`AnalysisResult`を固定値で返し、フィルタリング、重複排除、ソース上限を検証します。\n\n**保守への意味:** パイプラインのルールを追加したら、対応するFakeとテストケースをここに追加すると、実装詳細ではなくProtocolの契約を検証できます。\n\n**注意点:** 現在時刻に依存するFakeを使うテストは、日付境界で不安定になる可能性があります。時刻を注入する設計や固定時刻を検討してください。"
+    },
+    {
+      "file": "pyproject.toml",
+      "line": 1,
+      "selection": {
+        "start": { "line": 1, "character": 1 },
+        "end": { "line": 30, "character": 1 }
+      },
+      "title": "プロジェクト設定と依存関係",
+      "description": "**状況:** `pyproject.toml`は、パッケージ情報、依存関係、テスト設定、Ruff、ビルド方式をまとめたプロジェクトマニフェストです。\n\n**仕組み:** 依存関係はメジャーバージョンを固定しつつ更新範囲を許容し、開発用依存関係にpytestとカバレッジ計測を分離しています。テストは90%以上のカバレッジを要求します。\n\n**保守への意味:** 新しいサブシステムを追加したら、依存関係、バージョン制約、テスト・Lint設定への影響をここで確認します。\n\n**注意点:** READMEの開発手順は`uv`を前提にしています。ロックファイルを無視したインストールは依存関係の再現性を損なうため、通常の開発では`uv sync`と`uv run`を使います。"
+    },
+    {
+      "file": "config/default.toml",
+      "line": 1,
+      "title": "設定例: ソースと分析設定",
+      "description": "**状況:** `config/default.toml`は、RSSソース、収集条件、ローカルモデル設定、出力先を示す利用者向け設定例です。\n\n**仕組み:** `[collection]`にソースと取得上限、`[analysis]`にモデルパスや推論パラメーター、`[output]`にレポート出力先を指定します。\n\n**保守への意味:** 「レポートが空」「モデルを読み込めない」といった問い合わせでは、この設定を`domain.py`のモデル定義と照合し、設定読み込みから切り分けます。\n\n**注意点:** モデルの相対パスはプロジェクトルート基準です。別ディレクトリから実行する利用者には、パス解決の前提を明確に伝える必要があります。"
+    },
+    {
+      "content": "## メンテナーとして次にできること\n\nこのツアーを終えると、次の作業に進めます。\n\n- 設定にRSSソースを追加する\n- LLMのプロンプト、JSON契約、モデル設定を変更する\n- リテラシーレベルを追加・変更する\n- Markdownレポートの形式を拡張する\n- CLIコマンドを追加する\n- `collection` → 重複排除 → フィルタリング → `analysis` → `report`の順に不具合を追跡する\n\n変更時は、まず`domain.py`のデータ契約と該当サブシステムのテストを確認してください。開発環境の同期には`uv sync --extra dev`、検証には`uv run pytest`を使います。次に読む候補は、フィード解析障害の調査、分析方式の追加、LLM推論のバッチ化です。"
+    }
+  ]
+}
