@@ -1,0 +1,61 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "メンテナー向けアーキテクチャ概要",
+  "description": "develop ブランチの設定、収集、LLM 分析、レポート生成を保守するための案内です。",
+  "ref": "develop",
+  "isPrimary": false,
+  "steps": [
+    {
+      "file": "README.md",
+      "line": 1,
+      "title": "プロジェクトの処理経路",
+      "description": "**状況:** この CLI は AI 関連ニュースから Markdown レポートを作成します。\n\n**仕組み:** RSS/Atom を収集し、鮮度・重複を確認した後、記事本文を優先して LLM に渡し、要約・カテゴリ・リテラシーレベルを出力します。\n\n**保守への意味:** 変更時は `Article` から `AnalysisResult` までのデータ契約を通して確認します。\n\n**注意点:** OpenAI 互換クラウドプロバイダーとローカル llama.cpp の両方をサポートしています。"
+    },
+    {
+      "file": "src/ai_info_collector/settings.py",
+      "line": 14,
+      "title": "プロバイダー設定の読み込み",
+      "description": "**状況:** 設定ファイルは共通設定とプロバイダー別 TOML に分かれています。\n\n**仕組み:** 選択中の `config/<provider>.toml` とフォールバック用の `config/llama_cpp.toml` を `analysis` 設定へマージしてから検証します。\n\n**保守への意味:** OpenAI 互換プロバイダーの追加は通常、設定ファイルの追加から開始できます。\n\n**注意点:** 選択プロバイダーの TOML がないと対応する設定オブジェクトは作成されません。"
+    },
+    {
+      "file": "src/ai_info_collector/domain.py",
+      "selection": {"start": {"line": 35, "character": 1}, "end": {"line": 55, "character": 1}},
+      "title": "設定モデルの境界",
+      "description": "**状況:** `OpenAICompatibleSettings` と `AnalysisConfig` がクラウド・ローカル両方の設定契約です。\n\n**仕組み:** `llama_cpp` 以外の追加設定は OpenAI 互換設定として検証され、ローカル GGUF 設定は専用モデルで扱われます。\n\n**保守への意味:** 新規プロバイダーでバックエンドを増やす前に、この共通設定で表現できるか確認できます。\n\n**注意点:** GGUF の相対パス解決は llama.cpp 専用です。"
+    },
+    {
+      "file": "src/ai_info_collector/cli.py",
+      "selection": {"start": {"line": 23, "character": 1}, "end": {"line": 37, "character": 1}},
+      "title": "LLM バックエンドの選択",
+      "description": "**状況:** CLI が実際に使用する LLM バックエンドを決定します。\n\n**仕組み:** 選択プロバイダーの API キーがあれば OpenAI 互換バックエンドを、なければ警告を記録して llama.cpp バックエンドを作成します。\n\n**保守への意味:** フォールバック動作はここで一元化され、プロバイダー追加時にも保つべき契約です。\n\n**注意点:** API キー未設定時には `config/llama_cpp.toml` とローカル実行環境が必要になります。"
+    },
+    {
+      "file": "src/ai_info_collector/collection.py",
+      "selection": {"start": {"line": 73, "character": 1}, "end": {"line": 110, "character": 1}},
+      "title": "記事本文の優先取得",
+      "description": "**状況:** RSS の概要だけでは要約に必要な事実が不足する場合があります。\n\n**仕組み:** 記事ページの HTML を取得し、本文抽出に成功すれば feed の `content` や `summary` より優先します。\n\n**保守への意味:** 収集側の変更は分析品質とプロンプト長に直結します。\n\n**注意点:** ページ取得に失敗しても feed 側の内容へフォールバックし、両方なければ記事を除外します。"
+    },
+    {
+      "file": "src/ai_info_collector/analysis.py",
+      "selection": {"start": {"line": 55, "character": 1}, "end": {"line": 83, "character": 1}},
+      "title": "OpenAI 互換プロバイダー",
+      "description": "**状況:** クラウドプロバイダーは共通バックエンドを利用します。\n\n**仕組み:** TOML の `model`、`base_url`、`api_key_env` を使って OpenAI クライアントを作り、チャット補完 API を呼び出します。\n\n**保守への意味:** `openrouter/free` のようなルーターもモデル名を設定するだけで利用できます。\n\n**注意点:** `json_response_format = false` のプロバイダーでは、厳密 JSON モードは送信されません。"
+    },
+    {
+      "file": "src/ai_info_collector/pipeline.py",
+      "selection": {"start": {"line": 24, "character": 1}, "end": {"line": 55, "character": 1}},
+      "title": "失敗を蓄積するパイプライン",
+      "description": "**状況:** 一部のソースや記事が失敗しても、残りの処理は続行します。\n\n**仕組み:** 収集・分析・フィルターの失敗をエラー一覧へ追加しつつ、ソースごとの `max_items` を適用して成功結果だけを返します。\n\n**保守への意味:** ワークフローの仕様変更は、外部依存を使わない pipeline テストで検証できます。\n\n**注意点:** 同名のソースがあると上限カウントを共有します。"
+    },
+    {
+      "file": "tests/test_openai_compatible.py",
+      "line": 34,
+      "title": "プロバイダー変更時のテスト",
+      "description": "**状況:** 外部 API なしで OpenAI 互換リクエストを検証します。\n\n**仕組み:** 偽の `openai` モジュールがクライアント初期化値と補完リクエストを記録します。\n\n**保守への意味:** モデル名、ベース URL、JSON モードの変更をここで安全に確認できます。\n\n**注意点:** 実際のプロバイダー応答差はこの単体テストだけでは検出できません。"
+    },
+    {
+      "description": "プロバイダー設定からバックエンド選択、記事本文の取得、分析失敗の扱いまで追跡できます。",
+      "content": "## 次に変更できること\n\nプロバイダー設定から実行時のバックエンド選択、記事本文の取得、分析失敗の扱いまで追跡できます。新規プロバイダーには設定読込と OpenAI 互換バックエンドのテストを、収集仕様の変更には collection と pipeline のテストを先に追加してください。ローカル実行環境のセットアップは `WINDOWS_SETUP.md`、品質確認は `CONTRIBUTING.md` を参照します。"
+    }
+  ]
+}
