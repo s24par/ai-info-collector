@@ -21,7 +21,7 @@ class CollectionConfig(BaseModel):
 
 class AnalysisConfig(BaseModel):
     provider: Literal["llama_cpp"] = "llama_cpp"
-    summary_max_characters: int = Field(default=200, ge=50)
+    summary_max_characters: int = Field(default=300, ge=50)
     model_path: str = Field(min_length=1)
     n_ctx: int = Field(default=4096, gt=0)
     n_threads: int = Field(default=4, gt=0)

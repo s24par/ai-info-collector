@@ -9,7 +9,7 @@ def test_default_config_is_valid() -> None:
     config = load_config(ROOT / "config/default.toml")
 
     assert config.collection.freshness_days == 7
-    assert config.analysis.summary_max_characters == 200
+    assert config.analysis.summary_max_characters == 300
     assert config.analysis.max_tokens == 512
     assert config.analysis.n_gpu_layers == 0
     assert config.analysis.n_batch == 512

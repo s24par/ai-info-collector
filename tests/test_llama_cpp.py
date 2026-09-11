@@ -11,6 +11,7 @@ from ai_info_collector.analysis import (
     LlamaCppBackend,
     _build_prompt,
     _extract_json_object,
+    _parse_analysis_response,
 )
 from ai_info_collector.domain import AnalysisConfig, Article, FilterConfig
 
@@ -183,3 +184,19 @@ def test_build_prompt_includes_literacy_level_definitions() -> None:
     assert "1: 基礎的なAI用語を理解している" in prompt
     assert "2: 実践的な開発ができる" in prompt
     assert "AIモデル" in prompt
+
+
+@pytest.mark.parametrize("limit", [200, 300])
+def test_summary_limit_boundary(limit: int) -> None:
+    config = AnalysisConfig(model_path="/tmp/model.gguf", summary_max_characters=limit)
+    filters = FilterConfig(literacy_levels=[1], categories=["AIモデル"])
+    payload = dict(
+        summary="あ" * limit, category="AIモデル", literacy_level=1, reason="理由"
+    )
+    assert (
+        len(_parse_analysis_response(json.dumps(payload), filters, config).summary)
+        == limit
+    )
+    payload["summary"] += "。"
+    with pytest.raises(ValueError, match="character limit"):
+        _parse_analysis_response(json.dumps(payload), filters, config)
