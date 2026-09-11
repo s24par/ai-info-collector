@@ -41,7 +41,7 @@ max_items = 10
 
 [analysis]
 provider = "groq"
-summary_max_characters = 200
+summary_max_characters = 300
 
 [output]
 path = "output"

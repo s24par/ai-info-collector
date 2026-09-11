@@ -60,7 +60,7 @@ Example `config/default.toml` (common settings):
 ```toml
 [analysis]
 provider = "groq"
-summary_max_characters = 200
+summary_max_characters = 300
 ```
 
 Example `config/groq.toml`:
@@ -111,7 +111,18 @@ Logs are output to `logs/app.log` and rotated to `logs/app.log.YYYY-MM-DD` forma
 
 Collection runs in the order the sources appear in the configuration file. Articles are analyzed after checking freshness and duplication, and articles passing both the category and literacy level filters are output up to `max_items` per source.
 
-`collection.retry_count` is the maximum number of retries after the initial request. On communication failure, HTTP 429, or HTTP 500/502/503/504 for RSS/Atom GET/HEAD requests, it retries with exponential backoff and honors the server's `Retry-After` header. Other 4xx errors and POST requests are not retried.
+RSS/Atom feeds provide article discovery and publication dates. After freshness
+filtering and deduplication, the linked HTML page is fetched for every article,
+even when the feed includes a summary. Extracted page text is preferred for
+summarization. If page content cannot be obtained, the feed's `content` field is
+used, with `summary` as a last resort. Articles with no usable content are
+skipped with a warning. Page extraction does not execute JavaScript or support
+PDFs.
+
+`summary_max_characters` is a generation target. If the model returns a longer
+summary, the collector keeps it in the report and records a warning in the log.
+
+`collection.retry_count` is the maximum number of retries after the initial request. On communication failure, HTTP 429, or HTTP 500/502/503/504 for feed and article-page GET/HEAD requests, it retries with exponential backoff and honors the server's `Retry-After` header. Other 4xx errors and POST requests are not retried.
 
 ## Source feed discovery
 

@@ -156,6 +156,50 @@ def test_llama_cpp_tolerates_preamble_around_json() -> None:
     assert result.category == "AIモデル"
 
 
+def test_summary_over_target_is_retained_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    limit = 300
+    summary = "あ" * (limit + 1)
+    analyzer = LlmAnalyzer(
+        AnalysisConfig(
+            provider="llama_cpp",
+            summary_max_characters=limit,
+            llama_cpp=LlamaCppSettings(model_path="/tmp/model.gguf"),
+        ),
+        backend=FakeLlamaCppBackend(
+            json.dumps(
+                {
+                    "summary": summary,
+                    "category": "AIモデル",
+                    "literacy_level": 1,
+                    "reason": "理由",
+                }
+            )
+        ),
+    )
+    article = Article(
+        source="test",
+        title="AI news",
+        url="https://example.com/news",
+        published_at=datetime.now(timezone.utc),
+        content="content",
+    )
+    filters = FilterConfig(literacy_levels=[1], categories=["AIモデル"])
+
+    with caplog.at_level(logging.WARNING, logger="ai_info_collector.analysis"):
+        result = analyzer.analyze(article, filters)
+
+    assert result.summary == summary
+    assert any(
+        str(article.url) in record.getMessage()
+        and "summary_characters=301" in record.getMessage()
+        and "target=300" in record.getMessage()
+        and "retaining summary" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 def test_extract_json_object_slices_between_first_and_last_brace() -> None:
     raw_response = '前置きテキスト {"a": 1} 後置きテキスト'
 
@@ -185,8 +229,9 @@ def test_build_prompt_includes_literacy_level_definitions() -> None:
         categories=["AIモデル"],
     )
 
-    prompt = _build_prompt(article, filters, max_characters=200)
+    prompt = _build_prompt(article, filters, max_characters=300)
 
     assert "1: 基礎的なAI用語を理解している" in prompt
     assert "2: 実践的な開発ができる" in prompt
     assert "AIモデル" in prompt
+    assert "300文字以内" in prompt
