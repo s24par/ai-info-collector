@@ -68,14 +68,23 @@ class LlamaCppAnalyzer:
         except Exception as error:  # pragma: no cover - backend-specific failure path
             raise RuntimeError("llama.cpp inference failed") from error
         try:
-            return _parse_analysis_response(raw_response, filters, self.config)
+            result = _parse_analysis_response(raw_response, filters)
         except ValueError:
             logger.warning("article=%s raw_response=%r", article.url, raw_response)
             raise
+        summary_characters = len(result.summary)
+        if summary_characters > self.config.summary_max_characters:
+            logger.warning(
+                "article=%s summary_characters=%d exceeds configured target=%d; retaining summary",
+                article.url,
+                summary_characters,
+                self.config.summary_max_characters,
+            )
+        return result
 
 
 def _parse_analysis_response(
-    raw_response: str, filters: FilterConfig, config: AnalysisConfig
+    raw_response: str, filters: FilterConfig
 ) -> AnalysisResult:
     try:
         result = AnalysisResult.model_validate(
@@ -87,8 +96,6 @@ def _parse_analysis_response(
         raise ValueError(f"Unsupported category: {result.category}")
     if result.literacy_level not in filters.literacy_levels:
         raise ValueError(f"Unsupported literacy level: {result.literacy_level}")
-    if len(result.summary) > config.summary_max_characters:
-        raise ValueError("Summary exceeds configured character limit")
     return result
 
 

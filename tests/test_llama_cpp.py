@@ -11,7 +11,6 @@ from ai_info_collector.analysis import (
     LlamaCppBackend,
     _build_prompt,
     _extract_json_object,
-    _parse_analysis_response,
 )
 from ai_info_collector.domain import AnalysisConfig, Article, FilterConfig
 
@@ -186,17 +185,41 @@ def test_build_prompt_includes_literacy_level_definitions() -> None:
     assert "AIモデル" in prompt
 
 
-@pytest.mark.parametrize("limit", [200, 300])
-def test_summary_limit_boundary(limit: int) -> None:
-    config = AnalysisConfig(model_path="/tmp/model.gguf", summary_max_characters=limit)
+def test_summary_over_target_is_retained_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    limit = 300
+    summary = "あ" * (limit + 1)
+    analyzer = LlamaCppAnalyzer(
+        AnalysisConfig(model_path="/tmp/model.gguf", summary_max_characters=limit),
+        backend=FakeLlamaCppBackend(
+            json.dumps(
+                {
+                    "summary": summary,
+                    "category": "AIモデル",
+                    "literacy_level": 1,
+                    "reason": "理由",
+                }
+            )
+        ),
+    )
+    article = Article(
+        source="test",
+        title="AI news",
+        url="https://example.com/news",
+        published_at=datetime.now(timezone.utc),
+        content="content",
+    )
     filters = FilterConfig(literacy_levels=[1], categories=["AIモデル"])
-    payload = dict(
-        summary="あ" * limit, category="AIモデル", literacy_level=1, reason="理由"
+
+    with caplog.at_level(logging.WARNING, logger="ai_info_collector.analysis"):
+        result = analyzer.analyze(article, filters)
+
+    assert result.summary == summary
+    assert any(
+        str(article.url) in record.getMessage()
+        and "summary_characters=301" in record.getMessage()
+        and "target=300" in record.getMessage()
+        and "retaining summary" in record.getMessage()
+        for record in caplog.records
     )
-    assert (
-        len(_parse_analysis_response(json.dumps(payload), filters, config).summary)
-        == limit
-    )
-    payload["summary"] += "。"
-    with pytest.raises(ValueError, match="character limit"):
-        _parse_analysis_response(json.dumps(payload), filters, config)

@@ -135,6 +135,9 @@ max_tokens = 256
 temperature = 0.0
 ```
 
+`summary_max_characters` is a generation target. If the model returns a longer
+summary, the collector keeps it in the report and records a warning in the log.
+
 ## Notes
 
 - Set `model_path` to the path of a GGUF file that actually exists.
