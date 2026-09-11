@@ -2,10 +2,19 @@ import logging
 from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 
+import pytest
 from typer.testing import CliRunner
 
 from ai_info_collector import cli
-from ai_info_collector.domain import AnalysisResult, Article, LoggingConfig
+from ai_info_collector.analysis import LlamaCppBackend, OpenAICompatibleBackend
+from ai_info_collector.domain import (
+    AnalysisConfig,
+    AnalysisResult,
+    Article,
+    LlamaCppSettings,
+    LoggingConfig,
+    OpenAICompatibleSettings,
+)
 from ai_info_collector.feed_discovery import FeedCandidate
 from ai_info_collector.pipeline import PipelineResult
 
@@ -73,7 +82,7 @@ def test_sources_writes_discovered_feed_urls(tmp_path, monkeypatch) -> None:
     config_path.write_text(
         "[collection]\nfreshness_days = 7\n"
         "[[collection.sources]]\nname = 'source'\nurl = 'https://example.com'\n"
-        "[analysis]\nmodel = 'model'\nmodel_path = '/tmp/test-model.gguf'\n"
+        "[analysis]\n"
         "[output]\npath = 'report.md'\n[filter]\n"
         "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n",
         encoding="utf-8",
@@ -90,4 +99,45 @@ def test_sources_writes_discovered_feed_urls(tmp_path, monkeypatch) -> None:
     assert "Updated 1 source feed URLs" in result.stdout
     assert 'feed_url = "https://example.com/feed.xml"' in config_path.read_text(
         encoding="utf-8"
+    )
+
+
+def test_create_analyzer_uses_groq_backend_when_api_key_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    config = AnalysisConfig(
+        provider="groq",
+        groq=OpenAICompatibleSettings(
+            model="openai/gpt-oss-120b",
+            base_url="https://api.groq.com/openai/v1",
+            api_key_env="GROQ_API_KEY",
+        ),
+    )
+
+    analyzer = cli._create_analyzer(config)
+
+    assert isinstance(analyzer.backend, OpenAICompatibleBackend)
+
+
+def test_create_analyzer_falls_back_to_llama_cpp_without_api_key(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    config = AnalysisConfig(
+        provider="groq",
+        groq=OpenAICompatibleSettings(
+            model="openai/gpt-oss-120b",
+            base_url="https://api.groq.com/openai/v1",
+            api_key_env="GROQ_API_KEY",
+        ),
+        llama_cpp=LlamaCppSettings(model_path="/tmp/model.gguf"),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="ai_info_collector.cli"):
+        analyzer = cli._create_analyzer(config)
+
+    assert isinstance(analyzer.backend, LlamaCppBackend)
+    assert any(
+        "GROQ_API_KEY is not set" in record.getMessage() for record in caplog.records
     )

@@ -1,15 +1,23 @@
 import json
 import logging
+import sys
 from datetime import datetime, timezone
+from types import ModuleType
 
 import pytest
 
 from ai_info_collector.analysis import (
-    LlamaCppAnalyzer,
+    LlamaCppBackend,
+    LlmAnalyzer,
     _build_prompt,
     _extract_json_object,
 )
-from ai_info_collector.domain import AnalysisConfig, Article, FilterConfig
+from ai_info_collector.domain import (
+    AnalysisConfig,
+    Article,
+    FilterConfig,
+    LlamaCppSettings,
+)
 
 
 class FakeLlamaCppBackend:
@@ -20,13 +28,46 @@ class FakeLlamaCppBackend:
         return self.text
 
 
+def test_llama_cpp_backend_passes_gpu_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_kwargs = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs) -> None:
+            init_kwargs.update(kwargs)
+
+        def create_chat_completion(self, **kwargs):
+            return {"choices": [{"message": {"content": '{"result": "ok"}'}}]}
+
+    fake_module = ModuleType("llama_cpp")
+    fake_module.Llama = FakeLlama
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_module)
+    backend = LlamaCppBackend(
+        AnalysisConfig(
+            llama_cpp=LlamaCppSettings(
+                model_path="/tmp/model.gguf",
+                n_gpu_layers=-1,
+                n_batch=256,
+                main_gpu=1,
+            )
+        )
+    )
+
+    backend.generate("test")
+
+    assert init_kwargs["n_gpu_layers"] == -1
+    assert init_kwargs["n_batch"] == 256
+    assert init_kwargs["main_gpu"] == 1
+
+
 def test_llama_cpp_response_is_validated() -> None:
-    analyzer = LlamaCppAnalyzer(
+    analyzer = LlmAnalyzer(
         AnalysisConfig(
             provider="llama_cpp",
-            model_path="/tmp/model.gguf",
-            n_threads=2,
-            max_tokens=128,
+            llama_cpp=LlamaCppSettings(
+                model_path="/tmp/model.gguf", n_threads=2, max_tokens=128
+            ),
         ),
         backend=FakeLlamaCppBackend(
             json.dumps(
@@ -58,12 +99,12 @@ def test_llama_cpp_invalid_json_logs_raw_response(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     raw_response = "申し訳ありませんが、JSON形式では出力できません。"
-    analyzer = LlamaCppAnalyzer(
+    analyzer = LlmAnalyzer(
         AnalysisConfig(
             provider="llama_cpp",
-            model_path="/tmp/model.gguf",
-            n_threads=2,
-            max_tokens=128,
+            llama_cpp=LlamaCppSettings(
+                model_path="/tmp/model.gguf", n_threads=2, max_tokens=128
+            ),
         ),
         backend=FakeLlamaCppBackend(raw_response),
     )
@@ -92,12 +133,12 @@ def test_llama_cpp_tolerates_preamble_around_json() -> None:
         "reason": "前置き付きでも救済できるため",
     }
     raw_response = f"以下がJSONです。\n{json.dumps(payload)}\n以上です。"
-    analyzer = LlamaCppAnalyzer(
+    analyzer = LlmAnalyzer(
         AnalysisConfig(
             provider="llama_cpp",
-            model_path="/tmp/model.gguf",
-            n_threads=2,
-            max_tokens=128,
+            llama_cpp=LlamaCppSettings(
+                model_path="/tmp/model.gguf", n_threads=2, max_tokens=128
+            ),
         ),
         backend=FakeLlamaCppBackend(raw_response),
     )

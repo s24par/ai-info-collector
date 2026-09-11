@@ -1,25 +1,42 @@
 import logging
+import os
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import httpx
 import typer
+from dotenv import load_dotenv
 
-from .analysis import LlamaCppAnalyzer
+from .analysis import LlamaCppBackend, LlmAnalyzer, OpenAICompatibleBackend
 from .collection import RssCollector
 from .config_writer import SourceFeedUpdate, write_source_feed_urls
-from .domain import AnalysisConfig, LoggingConfig
+from .domain import AnalysisConfig, LoggingConfig, OpenAICompatibleSettings
 from .feed_discovery import FeedDiscoveryError, discover_feed_url
 from .http_client import create_collection_client
 from .pipeline import CollectionPipeline
 from .report import write_level_reports
 from .settings import load_config
 
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
 app = typer.Typer(help="Collect and classify AI-related information.")
 
 
-def _create_analyzer(config: AnalysisConfig) -> LlamaCppAnalyzer:
-    return LlamaCppAnalyzer(config)
+def _create_analyzer(config: AnalysisConfig) -> LlmAnalyzer:
+    settings = getattr(config, config.provider, None)
+    if config.provider != "llama_cpp" and isinstance(
+        settings, OpenAICompatibleSettings
+    ):
+        if os.environ.get(settings.api_key_env):
+            return LlmAnalyzer(
+                config, backend=OpenAICompatibleBackend(config.provider, settings)
+            )
+        logger.warning(
+            "%s is not set; falling back to llama_cpp provider", settings.api_key_env
+        )
+    return LlmAnalyzer(config, backend=LlamaCppBackend(config))
 
 
 def _configure_logging(config: LoggingConfig) -> None:

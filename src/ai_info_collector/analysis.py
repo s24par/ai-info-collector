@@ -2,19 +2,31 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
-from .domain import AnalysisConfig, AnalysisResult, Article, FilterConfig
+from .domain import (
+    AnalysisConfig,
+    AnalysisResult,
+    Article,
+    FilterConfig,
+    OpenAICompatibleSettings,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class LlamaCppBackend:
     def __init__(self, config: AnalysisConfig) -> None:
-        self.config = config
+        if config.llama_cpp is None:
+            raise RuntimeError(
+                "llama_cpp settings are not configured; add config/llama_cpp.toml"
+            )
+        self.settings = config.llama_cpp
         self._model: Any | None = None
 
     def generate(self, prompt: str) -> str:
+        settings = self.settings
         if self._model is None:
             try:
                 from llama_cpp import Llama
@@ -23,9 +35,12 @@ class LlamaCppBackend:
                     "llama-cpp-python is not installed; install it before using the llama_cpp provider"
                 ) from error
             self._model = Llama(
-                model_path=self.config.model_path,
-                n_ctx=self.config.n_ctx,
-                n_threads=self.config.n_threads,
+                model_path=settings.model_path,
+                n_ctx=settings.n_ctx,
+                n_threads=settings.n_threads,
+                n_gpu_layers=settings.n_gpu_layers,
+                n_batch=settings.n_batch,
+                main_gpu=settings.main_gpu,
             )
 
         # create_chat_completion applies the model's chat template (from GGUF metadata) and
@@ -33,8 +48,8 @@ class LlamaCppBackend:
         # text completion does not guarantee.
         completion = self._model.create_chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
+            max_tokens=settings.max_tokens,
+            temperature=settings.temperature,
             response_format={"type": "json_object"},
         )
         if isinstance(completion, dict):
@@ -47,11 +62,43 @@ class LlamaCppBackend:
         return str(completion).strip()
 
 
-class LlamaCppAnalyzer:
+class OpenAICompatibleBackend:
+    def __init__(self, provider: str, settings: OpenAICompatibleSettings) -> None:
+        self.provider = provider
+        self.settings = settings
+        self._client: Any | None = None
+
+    def generate(self, prompt: str) -> str:
+        settings = self.settings
+        if self._client is None:
+            try:
+                from openai import OpenAI
+            except ImportError as error:
+                raise RuntimeError(
+                    "openai is not installed; install it before using OpenAI-compatible providers"
+                ) from error
+            api_key = os.environ.get(settings.api_key_env)
+            if not api_key:
+                raise RuntimeError(f"{settings.api_key_env} is not set")
+            self._client = OpenAI(api_key=api_key, base_url=settings.base_url)
+
+        kwargs: dict[str, Any] = {
+            "model": settings.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": settings.max_tokens,
+            "temperature": settings.temperature,
+        }
+        if settings.json_response_format:
+            kwargs["response_format"] = {"type": "json_object"}
+        completion = self._client.chat.completions.create(**kwargs)
+        return completion.choices[0].message.content.strip()
+
+
+class LlmAnalyzer:
     def __init__(
         self,
         config: AnalysisConfig,
-        backend: LlamaCppBackend | None = None,
+        backend: LlamaCppBackend | OpenAICompatibleBackend | None = None,
     ) -> None:
         self.config = config
         self.backend = backend or LlamaCppBackend(config)
@@ -63,7 +110,7 @@ class LlamaCppAnalyzer:
         except RuntimeError:
             raise
         except Exception as error:  # pragma: no cover - backend-specific failure path
-            raise RuntimeError("llama.cpp inference failed") from error
+            raise RuntimeError("LLM inference failed") from error
         try:
             return _parse_analysis_response(raw_response, filters, self.config)
         except ValueError:
