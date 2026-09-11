@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class SourceConfig(BaseModel):
@@ -19,12 +19,13 @@ class CollectionConfig(BaseModel):
     sources: list[SourceConfig] = Field(min_length=1)
 
 
-class AnalysisConfig(BaseModel):
-    provider: Literal["llama_cpp"] = "llama_cpp"
-    summary_max_characters: int = Field(default=200, ge=50)
+class LlamaCppSettings(BaseModel):
     model_path: str = Field(min_length=1)
     n_ctx: int = Field(default=4096, gt=0)
     n_threads: int = Field(default=4, gt=0)
+    n_gpu_layers: int = Field(default=0, ge=-1)
+    n_batch: int = Field(default=512, gt=0)
+    main_gpu: int = Field(default=0, ge=0)
     max_tokens: int = Field(default=256, gt=0)
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
 
@@ -33,6 +34,28 @@ class AnalysisConfig(BaseModel):
         if not resolved_path.is_absolute():
             repo_root = Path(__file__).resolve().parents[2]
             self.model_path = str((repo_root / resolved_path).resolve())
+
+
+class OpenAICompatibleSettings(BaseModel):
+    """Settings shared by any provider exposing an OpenAI-compatible chat completions API."""
+
+    model: str = Field(min_length=1)
+    base_url: str = Field(min_length=1)
+    api_key_env: str = Field(min_length=1)
+    max_tokens: int = Field(default=1024, gt=0)
+    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    json_response_format: bool = True
+
+
+class AnalysisConfig(BaseModel):
+    # Any key other than llama_cpp is validated as OpenAICompatibleSettings, so new
+    # providers only need a config/<provider>.toml file, no changes here.
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, OpenAICompatibleSettings]
+
+    provider: str = Field(default="groq", min_length=1)
+    summary_max_characters: int = Field(default=200, ge=50)
+    llama_cpp: LlamaCppSettings | None = None
 
 
 class OutputConfig(BaseModel):

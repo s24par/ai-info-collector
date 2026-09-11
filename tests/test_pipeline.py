@@ -79,8 +79,7 @@ def test_pipeline_keeps_successes_when_one_source_fails() -> None:
             },
             "analysis": {
                 "provider": "llama_cpp",
-                "model": "test",
-                "model_path": "/tmp/test-model.gguf",
+                "llama_cpp": {"model_path": "/tmp/test-model.gguf"},
             },
             "output": {"path": "report.md"},
             "filter": {"literacy_levels": [1], "categories": ["AIモデル"]},
@@ -117,8 +116,7 @@ def test_pipeline_limits_each_source_in_collection_order() -> None:
             },
             "analysis": {
                 "provider": "llama_cpp",
-                "model": "test",
-                "model_path": "/tmp/test-model.gguf",
+                "llama_cpp": {"model_path": "/tmp/test-model.gguf"},
             },
             "output": {"path": "report.md"},
             "filter": {"literacy_levels": [1], "categories": ["AIモデル"]},
@@ -164,8 +162,7 @@ def test_pipeline_applies_source_limit_after_filtering() -> None:
             },
             "analysis": {
                 "provider": "llama_cpp",
-                "model": "test",
-                "model_path": "/tmp/test-model.gguf",
+                "llama_cpp": {"model_path": "/tmp/test-model.gguf"},
             },
             "output": {"path": "report.md"},
             "filter": {"literacy_levels": [1], "categories": ["AIモデル"]},

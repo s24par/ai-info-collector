@@ -40,13 +40,8 @@ feed_url = "https://stackoverflow.com/feeds/tag?tagnames=artificial-intelligence
 max_items = 10
 
 [analysis]
-provider = "llama_cpp"
+provider = "groq"
 summary_max_characters = 200
-model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
-n_ctx = 40960
-n_threads = 4
-max_tokens = 512
-temperature = 0.0
 
 [output]
 path = "output"

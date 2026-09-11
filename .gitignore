@@ -16,6 +16,9 @@ output/
 models/gguf/*
 !models/gguf/put_gguf_here
 
+# Secrets
+.env
+
 # Editor and chat artifacts
 .vscode/*.log
 .chat-history/

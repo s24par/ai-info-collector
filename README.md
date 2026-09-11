@@ -1,16 +1,17 @@
 # AI Information Collector
 
-A Python application that collects AI-related information and summarizes/classifies it using a local llama.cpp inference engine.
+A Python application that collects AI-related information and summarizes/classifies it using an LLM, either an OpenAI SDK-compatible cloud provider or a local llama.cpp inference engine.
 
 ## Overview
 
-This app collects articles from configured RSS/Atom feeds and uses a locally placed GGUF model to summarize and categorize them. The generated results are output as Markdown reports.
+This app collects articles from configured RSS/Atom feeds and uses an LLM to summarize and categorize them. The generated results are output as Markdown reports.
 
 The current implementation policy is as follows:
 
-- Only local execution is supported
-- Cloud LLM / OpenAI-compatible API configuration is not implemented
-- The inference backend assumes `llama-cpp-python`
+- Groq (`GROQ_API_KEY`) is the default OpenAI SDK-compatible cloud provider
+- Claude (`ANTHROPIC_API_KEY`) is also supported through the same `openai` package and backend
+- If the selected cloud provider's API key is not set, the app automatically falls back to a local `llama-cpp-python` model
+- Analysis provider settings are split across `config/default.toml` (common), provider-specific files such as `config/groq.toml` and `config/claude.toml`, and `config/llama_cpp.toml`
 
 ## Setup
 
@@ -18,14 +19,34 @@ The current implementation policy is as follows:
 uv sync --extra dev
 ```
 
-Prepare a local GGUF model and set its file path in `analysis.model_path` in the configuration file.
+Copy `.env.example` to `.env` and set the API key for the cloud provider you want
+to use. Groq keys are obtained from the [Groq console](https://console.groq.com)
+and Claude keys from the [Anthropic Console](https://console.anthropic.com):
+
+```bash
+cp .env.example .env
+# then edit .env and set GROQ_API_KEY=...
+# or set ANTHROPIC_API_KEY=... when using Claude
+```
+
+`.env` is loaded automatically at startup and is excluded from version control via `.gitignore`.
+
+To use the local `llama-cpp-python` fallback (or run with `provider = "llama_cpp"` explicitly),
+for instructions on using the prebuilt CPU-only `llama-cpp-python` wheel on
+Windows, see [WINDOWS_SETUP.md](WINDOWS_SETUP.md).
+
+Prepare a local GGUF model and set its file path in `model_path` in `config/llama_cpp.toml`.
 
 The recommended directory structure is as follows.
 
 ```text
 .
+├── .env
 ├── config/
-│   └── default.toml
+│   ├── default.toml
+│   ├── claude.toml
+│   ├── groq.toml
+│   └── llama_cpp.toml
 ├── models/
 │   └── gguf/
 │       └── Qwen2.5-3B-Instruct-Q4_K_M.gguf
@@ -34,15 +55,45 @@ The recommended directory structure is as follows.
 └── uv.lock
 ```
 
-Example `model_path`:
+Example `config/default.toml` (common settings):
 
 ```toml
 [analysis]
-provider = "llama_cpp"
+provider = "groq"
+summary_max_characters = 200
+```
+
+Example `config/groq.toml`:
+
+```toml
+model = "openai/gpt-oss-120b"
+max_tokens = 1024
+temperature = 0.0
+```
+
+Example `config/claude.toml`:
+
+```toml
+model = "claude-sonnet-4-5"
+max_tokens = 1024
+temperature = 0.0
+```
+
+Both cloud providers use the `openai` Python package and the shared
+`OpenAICompatibleBackend`. Groq supports native JSON response mode; Claude's
+OpenAI-compatible endpoint does not, so Claude relies on the JSON instructions
+in the analysis prompt and the tolerant response parser.
+
+Example `config/llama_cpp.toml`:
+
+```toml
 model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 n_ctx = 40960
 n_threads = 4
-max_tokens = 256
+n_gpu_layers = 0
+n_batch = 512
+main_gpu = 0
+max_tokens = 512
 temperature = 0.0
 ```
 
@@ -99,20 +150,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](
 
 ## Example configuration
 
-`config/default.toml` is an example configuration for local llama.cpp execution.
-
-```toml
-[analysis]
-provider = "llama_cpp"
-summary_max_characters = 200
-model_path = "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
-n_ctx = 40960
-n_threads = 4
-max_tokens = 256
-temperature = 0.0
-```
+`config/default.toml`, `config/claude.toml`, `config/groq.toml`, and
+`config/llama_cpp.toml` together are the example configuration; see
+[Setup](#setup) above for the split and content of each file.
 
 ## Notes
 
-- Set `model_path` to the path of a GGUF file that actually exists.
+- With `provider = "groq"` and no `GROQ_API_KEY` set, the app logs a warning and falls back to `llama_cpp`; make sure `config/llama_cpp.toml` points at a valid `model_path` if you rely on this fallback.
+- To use Claude, set `provider = "claude"` in `config/default.toml` and set `ANTHROPIC_API_KEY` in `.env`. If it is unset, the same llama.cpp fallback applies.
+- OpenAI SDK-compatible providers are registered in `analysis.py`; adding one requires a registry entry, a provider-specific settings field and TOML file, and its API key in `.env`.
+- Set `model_path` in `config/llama_cpp.toml` to the path of a GGUF file that actually exists.
+- GPU offloading requires a hardware-accelerated `llama-cpp-python` build; the
+  default CPU wheel cannot use CUDA even when `n_gpu_layers` is enabled.
 - With `llama-cpp-python`, the CPU/GPU capability of the local environment affects execution performance.

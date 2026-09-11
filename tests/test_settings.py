@@ -9,8 +9,16 @@ def test_default_config_is_valid() -> None:
     config = load_config(ROOT / "config/default.toml")
 
     assert config.collection.freshness_days == 7
+    assert config.analysis.provider == "groq"
     assert config.analysis.summary_max_characters == 200
-    assert config.analysis.max_tokens == 512
+    assert config.analysis.groq is not None
+    assert config.analysis.groq.model == "openai/gpt-oss-120b"
+    assert config.analysis.groq.max_tokens == 1024
+    assert config.analysis.llama_cpp is not None
+    assert config.analysis.llama_cpp.max_tokens == 512
+    assert config.analysis.llama_cpp.n_gpu_layers == 0
+    assert config.analysis.llama_cpp.n_batch == 512
+    assert config.analysis.llama_cpp.main_gpu == 0
     assert [source.name for source in config.collection.sources] == [
         "openai",
         "deepmind",
@@ -20,7 +28,7 @@ def test_default_config_is_valid() -> None:
         "stackoverflow_ai",
     ]
     assert all(source.max_items == 10 for source in config.collection.sources)
-    assert config.analysis.model_path == str(
+    assert config.analysis.llama_cpp.model_path == str(
         (ROOT / "models/gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf").resolve()
     )
     assert config.filter.literacy_levels == [1, 2, 3]
@@ -36,7 +44,7 @@ def test_source_feed_url_and_max_items_are_optional(tmp_path: Path) -> None:
         "[collection]\nfreshness_days = 7\n"
         "[[collection.sources]]\nname = 'source'\n"
         "url = 'https://example.com'\n"
-        "[analysis]\nmodel_path = '/tmp/test-model.gguf'\n"
+        "[analysis]\n"
         "[output]\npath = 'report.md'\n[filter]\n"
         "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n",
         encoding="utf-8",
@@ -54,7 +62,7 @@ def test_invalid_source_max_items_is_rejected(tmp_path: Path) -> None:
         "[collection]\nfreshness_days = 7\n"
         "[[collection.sources]]\nname = 'source'\n"
         "url = 'https://example.com'\nfeed_url = 'https://example.com/feed'\nmax_items = 0\n"
-        "[analysis]\nmodel_path = '/tmp/test-model.gguf'\n"
+        "[analysis]\n"
         "[output]\npath = 'report.md'\n[filter]\n"
         "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n"
     )
@@ -65,3 +73,26 @@ def test_invalid_source_max_items_is_rejected(tmp_path: Path) -> None:
         assert "Invalid configuration" in str(error)
     else:
         raise AssertionError("Invalid configuration was accepted")
+
+
+def test_invalid_gpu_configuration_is_rejected(tmp_path: Path) -> None:
+    config_path = tmp_path / "invalid-gpu.toml"
+    config_path.write_text(
+        "[collection]\nfreshness_days = 7\n"
+        "[[collection.sources]]\nname = 'source'\n"
+        "url = 'https://example.com'\n"
+        "[analysis]\nprovider = 'llama_cpp'\n"
+        "[output]\npath = 'report.md'\n[filter]\n"
+        "literacy_levels = [1]\ncategories = ['AIモデル']\n[logging]\nfile = 'app.log'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "llama_cpp.toml").write_text(
+        "model_path = '/tmp/test-model.gguf'\nn_gpu_layers = -2\n", encoding="utf-8"
+    )
+
+    try:
+        load_config(config_path)
+    except ValueError as error:
+        assert "Invalid configuration" in str(error)
+    else:
+        raise AssertionError("Invalid GPU configuration was accepted")
