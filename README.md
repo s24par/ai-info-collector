@@ -9,9 +9,9 @@ This app collects articles from configured RSS/Atom feeds and uses an LLM to sum
 The current implementation policy is as follows:
 
 - Groq (`GROQ_API_KEY`) is the default OpenAI SDK-compatible cloud provider
-- Claude (`ANTHROPIC_API_KEY`) is also supported through the same `openai` package and backend
+- Claude, OpenAI, OpenRouter, and xAI are also supported through the same `openai` package and backend
 - If the selected cloud provider's API key is not set, the app automatically falls back to a local `llama-cpp-python` model
-- Analysis provider settings are split across `config/default.toml` (common), provider-specific files such as `config/groq.toml` and `config/claude.toml`, and `config/llama_cpp.toml`
+- Analysis settings are split across `config/default.toml` (common), one provider-specific TOML file, and `config/llama_cpp.toml` for the local fallback
 
 ## Setup
 
@@ -19,15 +19,22 @@ The current implementation policy is as follows:
 uv sync --extra dev
 ```
 
-Copy `.env.example` to `.env` and set the API key for the cloud provider you want
-to use. Groq keys are obtained from the [Groq console](https://console.groq.com)
-and Claude keys from the [Anthropic Console](https://console.anthropic.com):
+Copy `.env.example` to `.env` and set the API key for the selected cloud
+provider:
 
 ```bash
 cp .env.example .env
 # then edit .env and set GROQ_API_KEY=...
-# or set ANTHROPIC_API_KEY=... when using Claude
 ```
+
+| Provider | `provider` value | API key environment variable | Settings file |
+| --- | --- | --- | --- |
+| Groq | `groq` | `GROQ_API_KEY` | `config/groq.toml` |
+| Claude | `claude` | `ANTHROPIC_API_KEY` | `config/claude.toml` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `config/openai.toml` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `config/openrouter.toml` |
+| xAI | `xai` | `XAI_API_KEY` | `config/xai.toml` |
+| Local llama.cpp | `llama_cpp` | Not required | `config/llama_cpp.toml` |
 
 `.env` is loaded automatically at startup and is excluded from version control via `.gitignore`.
 
@@ -46,6 +53,9 @@ The recommended directory structure is as follows.
 │   ├── default.toml
 │   ├── claude.toml
 │   ├── groq.toml
+│   ├── openai.toml
+│   ├── openrouter.toml
+│   ├── xai.toml
 │   └── llama_cpp.toml
 ├── models/
 │   └── gguf/
@@ -67,6 +77,8 @@ Example `config/groq.toml`:
 
 ```toml
 model = "openai/gpt-oss-120b"
+base_url = "https://api.groq.com/openai/v1"
+api_key_env = "GROQ_API_KEY"
 max_tokens = 1024
 temperature = 0.0
 ```
@@ -75,14 +87,16 @@ Example `config/claude.toml`:
 
 ```toml
 model = "claude-sonnet-4-5"
+base_url = "https://api.anthropic.com/v1/"
+api_key_env = "ANTHROPIC_API_KEY"
 max_tokens = 1024
 temperature = 0.0
+json_response_format = false
 ```
 
-Both cloud providers use the `openai` Python package and the shared
-`OpenAICompatibleBackend`. Groq supports native JSON response mode; Claude's
-OpenAI-compatible endpoint does not, so Claude relies on the JSON instructions
-in the analysis prompt and the tolerant response parser.
+All cloud providers use the `openai` Python package and the shared
+`OpenAICompatibleBackend`. Their complete settings are in the corresponding
+files under `config/`.
 
 Example `config/llama_cpp.toml`:
 
@@ -161,15 +175,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](
 
 ## Example configuration
 
-`config/default.toml`, `config/claude.toml`, `config/groq.toml`, and
-`config/llama_cpp.toml` together are the example configuration; see
-[Setup](#setup) above for the split and content of each file.
+`config/default.toml`, the selected cloud provider settings file, and
+`config/llama_cpp.toml` together form a complete configuration. The repository
+includes settings files for Groq, Claude, OpenAI, OpenRouter, and xAI.
 
 ## Notes
 
 - With `provider = "groq"` and no `GROQ_API_KEY` set, the app logs a warning and falls back to `llama_cpp`; make sure `config/llama_cpp.toml` points at a valid `model_path` if you rely on this fallback.
-- To use Claude, set `provider = "claude"` in `config/default.toml` and set `ANTHROPIC_API_KEY` in `.env`. If it is unset, the same llama.cpp fallback applies.
-- OpenAI SDK-compatible providers are registered in `analysis.py`; adding one requires a registry entry, a provider-specific settings field and TOML file, and its API key in `.env`.
+- To use another cloud provider, set its value from the table above as `provider` in `config/default.toml` and set its API key in `.env`. An unset key uses the same llama.cpp fallback.
+- To add an OpenAI SDK-compatible provider, create `config/<provider>.toml` with `model`, `base_url`, and `api_key_env`; set `provider = "<provider>"` in `config/default.toml`; then add that environment variable to `.env`. No change to `analysis.py` is required.
 - Set `model_path` in `config/llama_cpp.toml` to the path of a GGUF file that actually exists.
 - GPU offloading requires a hardware-accelerated `llama-cpp-python` build; the
   default CPU wheel cannot use CUDA even when `n_gpu_layers` is enabled.
