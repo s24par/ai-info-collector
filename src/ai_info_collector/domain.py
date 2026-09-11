@@ -54,7 +54,7 @@ class AnalysisConfig(BaseModel):
     __pydantic_extra__: dict[str, OpenAICompatibleSettings]
 
     provider: str = Field(default="groq", min_length=1)
-    summary_max_characters: int = Field(default=200, ge=50)
+    summary_max_characters: int = Field(default=300, ge=50)
     llama_cpp: LlamaCppSettings | None = None
 
 

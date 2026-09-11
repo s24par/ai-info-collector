@@ -10,7 +10,7 @@ def test_default_config_is_valid() -> None:
 
     assert config.collection.freshness_days == 7
     assert config.analysis.provider == "groq"
-    assert config.analysis.summary_max_characters == 200
+    assert config.analysis.summary_max_characters == 300
     assert config.analysis.groq is not None
     assert config.analysis.groq.model == "openai/gpt-oss-120b"
     assert config.analysis.groq.max_tokens == 1024

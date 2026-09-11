@@ -112,14 +112,23 @@ class LlmAnalyzer:
         except Exception as error:  # pragma: no cover - backend-specific failure path
             raise RuntimeError("LLM inference failed") from error
         try:
-            return _parse_analysis_response(raw_response, filters, self.config)
+            result = _parse_analysis_response(raw_response, filters)
         except ValueError:
             logger.warning("article=%s raw_response=%r", article.url, raw_response)
             raise
+        summary_characters = len(result.summary)
+        if summary_characters > self.config.summary_max_characters:
+            logger.warning(
+                "article=%s summary_characters=%d exceeds configured target=%d; retaining summary",
+                article.url,
+                summary_characters,
+                self.config.summary_max_characters,
+            )
+        return result
 
 
 def _parse_analysis_response(
-    raw_response: str, filters: FilterConfig, config: AnalysisConfig
+    raw_response: str, filters: FilterConfig
 ) -> AnalysisResult:
     try:
         result = AnalysisResult.model_validate(
@@ -131,8 +140,6 @@ def _parse_analysis_response(
         raise ValueError(f"Unsupported category: {result.category}")
     if result.literacy_level not in filters.literacy_levels:
         raise ValueError(f"Unsupported literacy level: {result.literacy_level}")
-    if len(result.summary) > config.summary_max_characters:
-        raise ValueError("Summary exceeds configured character limit")
     return result
 
 
@@ -157,7 +164,14 @@ def _build_prompt(article: Article, filters: FilterConfig, max_characters: int) 
     levels = "; ".join(level_items)
     return (
         "以下の記事を分析し、JSONオブジェクトのみを返してください。前置きや説明文は一切出力しないでください。"
+        "本文に記載された事実だけを使い、発表主体・主な変更点・重要な効果を簡潔に要約してください。"
+        "背景説明、細かな列挙、同じ内容の繰り返しは省いてください。"
         f"summaryは日本語で{max_characters}文字以内、categoryは次の候補から1つ: {categories}。"
         f"literacy_levelは次の定義を基準に数値から1つ選択してください: [{levels}]。reasonは日本語で100文字以内、判定理由を簡潔に記述してください。\n"
-        f"タイトル: {article.title}\n本文: {article.content}"
+        f"タイトル: {article.title}\n本文: {article.content}\n\n"
+        "出力前の確認: summaryの文章を作成した後、その文字数を数えてください。"
+        "日本語・英数字・句読点・空白・改行をそれぞれ1文字として数え、JSONのキー名や囲みの引用符は含めません。"
+        f"{max_characters}文字を超えていたら、重要度の低い説明を削って短縮し、再度文字数を確認してください。"
+        "上限いっぱいまで書く必要はありません。reasonも100文字以内にしてください。"
+        "文字数や確認手順は出力せず、summary、category、literacy_level、reasonの4項目のJSONだけを返してください。"
     )
