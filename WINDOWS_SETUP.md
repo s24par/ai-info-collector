@@ -1,27 +1,27 @@
-# Windows Setup
+# Windows向けセットアップ
 
-This guide covers the Windows-specific setup for running AI Information
-Collector with a local llama.cpp model. It assumes that the repository has
-already been cloned and that Python 3.11 or later is available.
+このガイドでは、ローカルの llama.cpp モデルを使って AI Information
+Collector を Windows 環境で実行するための手順を説明します。リポジトリの
+クローンと Python 3.11 以降の準備は完了している前提です。
 
-## Install uv
+## `uv` のインストール
 
-Skip this step when `uv --version` succeeds.
+`uv --version` が成功する場合、この手順は不要です。
 
 ```powershell
 winget install --id astral-sh.uv --exact --source winget
 ```
 
-Open a new PowerShell window, then confirm the installation.
+インストール後に PowerShell を開き直し、バージョンを確認します。
 
 ```powershell
 uv --version
 ```
 
-## Download a GGUF model
+## GGUFモデルのダウンロード
 
-Run the following commands from the repository root. The default llama.cpp
-configuration expects `models\gguf\Qwen2.5-3B-Instruct-Q4_K_M.gguf`.
+以下のコマンドはリポジトリのルートディレクトリで実行します。デフォルトの
+llama.cpp 設定では `models\gguf\Qwen2.5-3B-Instruct-Q4_K_M.gguf` を参照します。
 
 ```powershell
 $modelDirectory = Join-Path (Get-Location) "models\gguf"
@@ -33,13 +33,14 @@ Invoke-WebRequest `
 Get-Item $modelPath | Select-Object FullName, Length
 ```
 
-The download is about 2.1 GB and is excluded from Git.
+ダウンロードサイズは約 2.1 GB で、このモデルファイルは Git の管理対象外です。
 
-## Create the environment
+## 実行環境の作成
 
-The default project dependency may require a C/C++ build on Windows. To use a
-prebuilt CPU-only `llama-cpp-python` wheel instead, create the environment
-without that package and install the wheel from the official wheel index.
+プロジェクトのデフォルト依存関係では、Windows 上で C/C++ ビルドが必要になる
+場合があります。ビルド済みの CPU 専用 `llama-cpp-python` wheel を使うため、
+最初にそのパッケージを除外して環境を作成し、公式 wheel インデックスから
+インストールします。
 
 ```powershell
 uv sync `
@@ -53,23 +54,25 @@ uv pip install `
   "llama-cpp-python==0.3.35"
 ```
 
-Install a compatible prebuilt wheel version when the version shown above is no
-longer available. Visual C++ Build Tools are only needed when building
-`llama-cpp-python` from source.
+上記バージョンが利用できない場合は、互換性のあるビルド済み wheel バージョンを
+指定してください。Visual C++ Build Tools が必要になるのは、
+`llama-cpp-python` をソースからビルドする場合のみです。
 
-## Configure llama.cpp
+## llama.cpp の設定
 
-`config/default.toml` selects the provider and contains shared settings. Local
-model settings belong in `config/llama_cpp.toml`.
+`config/default.toml` ではプロバイダーと共通設定を管理し、ローカルモデル固有の
+設定は `config/llama_cpp.toml` に記述します。
 
-The default provider is Groq. Set `GROQ_API_KEY` in `.env` to use it, or set
-`provider = "llama_cpp"` in the `[analysis]` section of
-`config/default.toml` to always use the local model. When the selected cloud
-provider key is not set, the application falls back to llama.cpp.
+デフォルトのプロバイダーは Groq です。Groq を使う場合は `.env` に
+`GROQ_API_KEY` を設定してください。常にローカルモデルを使う場合は、
+`config/default.toml` の `[analysis]` セクションで
+`provider = "llama_cpp"` を設定します。選択中のクラウドプロバイダーのキーが
+未設定の場合、アプリケーションは llama.cpp にフォールバックします。
 
-Set `model_path` in `config/llama_cpp.toml` to the GGUF file you downloaded.
+`config/llama_cpp.toml` の `model_path` を、ダウンロードした GGUF ファイルに
+合わせて設定します。
 
-## Verify the installation
+## インストール結果の確認
 
 ```powershell
 uv run python -c "from llama_cpp import Llama; print('llama-cpp-python: OK')"
@@ -78,21 +81,20 @@ uv run ruff format --check src tests
 uv run pytest
 ```
 
-## Run the application
+## アプリケーションの実行
 
 ```powershell
 uv run ai-info-collector sources --config config/default.toml
 uv run ai-info-collector run --config config/default.toml
 ```
 
-`sources` discovers missing RSS/Atom feed URLs. `run` collects and analyzes
-articles, then writes reports to `output\<timestamp>\` and logs to
-`logs\app.log`.
+`sources` は未設定の RSS/Atom フィード URL を検出します。`run` は記事を収集・解析し、
+結果を `output\<timestamp>\` に出力します。ログは `logs\app.log` に出力されます。
 
-## Use an NVIDIA GPU
+## NVIDIA GPUを利用する場合
 
-Install a CUDA-enabled `llama-cpp-python` wheel that matches your environment.
-For example, the following uses the CUDA 12.4 wheel index.
+利用環境に合った CUDA 対応 `llama-cpp-python` wheel をインストールします。
+以下は CUDA 12.4 の wheel インデックスを使う例です。
 
 ```powershell
 uv pip uninstall `
@@ -105,13 +107,13 @@ uv pip install `
   "llama-cpp-python==0.3.23"
 ```
 
-Verify that the installed wheel reports CUDA support.
+インストール済み wheel が CUDA サポート付きか確認します。
 
 ```powershell
 uv run python -c "from llama_cpp import llama_print_system_info; print(llama_print_system_info().decode())"
 ```
 
-Update the following settings in `config/llama_cpp.toml`.
+`config/llama_cpp.toml` の以下設定を更新します。
 
 ```toml
 n_gpu_layers = -1
@@ -119,32 +121,33 @@ n_batch = 512
 main_gpu = 0
 ```
 
-- `n_gpu_layers = -1` offloads all model layers to the GPU.
-- A positive `n_gpu_layers` value offloads that many layers.
-- `n_gpu_layers = 0` keeps inference on the CPU.
-- `main_gpu` selects the GPU index.
+- `n_gpu_layers = -1` は全レイヤーを GPU にオフロードします。
+- `n_gpu_layers` を正数にすると、その数だけレイヤーを GPU にオフロードします。
+- `n_gpu_layers = 0` は CPU 推論になります。
+- `main_gpu` は使用する GPU インデックスを指定します。
 
-If the model does not fit in VRAM, lower `n_gpu_layers` or `n_batch`.
+モデルが VRAM に収まらない場合は、`n_gpu_layers` または `n_batch` を下げてください。
 
-## Troubleshooting
+## トラブルシューティング
 
-### Build tools are requested
+### Build tools が要求される
 
-The source distribution was selected instead of a prebuilt wheel. Repeat the
-two commands in [Create the environment](#create-the-environment).
+ビルド済み wheel ではなくソース配布物が選択されています。
+「実行環境の作成」セクションの 2 つのコマンドを再実行してください。
 
-### The model cannot be opened
+### モデルを開けない
 
-Confirm that the model path in `config/llama_cpp.toml` exists and that the
-download is complete.
+`config/llama_cpp.toml` のモデルパスが存在し、ダウンロードが完了していることを
+確認してください。
 
 ```powershell
 Get-Item .\models\gguf\Qwen2.5-3B-Instruct-Q4_K_M.gguf |
   Select-Object FullName, Length
 ```
 
-### GPU offloading is unavailable
+### GPU オフロードが利用できない
 
-Confirm that `nvidia-smi` finds the GPU, the system information output contains
-`CUDA`, and `config/llama_cpp.toml` sets `n_gpu_layers` to `-1` or a positive
-value. A CPU-only wheel cannot use CUDA regardless of the setting.
+`nvidia-smi` で GPU が認識されること、システム情報出力に `CUDA` が含まれること、
+`config/llama_cpp.toml` の `n_gpu_layers` が `-1` または正数であることを確認してください。
+CPU 専用 wheel では設定に関係なく CUDA は利用できません。
+
